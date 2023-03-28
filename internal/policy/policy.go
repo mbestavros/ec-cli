@@ -29,10 +29,13 @@ import (
 	"time"
 
 	"github.com/ghodss/yaml"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	ecc "github.com/hacbs-contract/enterprise-contract-controller/api/v1alpha1"
 	"github.com/hashicorp/go-multierror"
 	"github.com/sigstore/cosign/v2/cmd/cosign/cli/rekor"
 	"github.com/sigstore/cosign/v2/pkg/cosign"
+	ociremote "github.com/sigstore/cosign/v2/pkg/oci/remote"
 	cosignSig "github.com/sigstore/cosign/v2/pkg/signature"
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
 	sigstoreSig "github.com/sigstore/sigstore/pkg/signature"
@@ -255,6 +258,10 @@ func checkOpts(ctx context.Context, p *policy) (*cosign.CheckOpts, error) {
 		return nil, err
 	}
 	opts.SigVerifier = verifier
+	progressChan := make(chan v1.Update)
+	opts.RegistryClientOpts = append(opts.RegistryClientOpts, ociremote.WithRemoteOptions(remote.WithProgress(progressChan)))
+
+	go printProgress(progressChan)
 
 	if p.RekorUrl == "" {
 		opts.IgnoreTlog = true
@@ -294,6 +301,23 @@ func checkOpts(ctx context.Context, p *policy) (*cosign.CheckOpts, error) {
 	}
 
 	return &opts, nil
+}
+
+func printProgress(progress chan v1.Update) {
+
+	incomplete := true
+
+	log.Error("starting output loop")
+	for incomplete {
+		select {
+		case currentProgress := <-progress:
+			log.Error("current progress is: ", currentProgress)
+		default:
+			log.Error("no progress")
+		}
+		time.Sleep(1 * time.Second)
+	}
+
 }
 
 type signatureClient interface {
